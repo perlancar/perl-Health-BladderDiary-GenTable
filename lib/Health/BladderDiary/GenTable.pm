@@ -8,7 +8,6 @@ package Health::BladderDiary::GenTable;
 use 5.010001;
 use strict;
 use warnings;
-use HTML::Entities;
 
 use Exporter qw(import);
 our @EXPORT_OK = qw(gen_bladder_diary_table_from_entries);
@@ -32,46 +31,167 @@ sub gen_bladder_diary_table_from_entries {
 
     my $entries = $args{entries};
     my @urinations;
-    my @fluid_intakes;
+    my @intakes;
 
     my $i = 0;
     for my $para (split /\R\R+/, $entries) {
         my $para0 = $para;
         $i++;
         my $time;
-        $para =~ s/\A(\d\d)[:.]?(\d\d)\s*// or return [400, "Paragraph $i of entries: invalid time, please start with hhmm or hh:mm: $para0"];
-        my ($h, $m) = ($1, $2);
+        $para =~ s/\A(\d\d)[:.]?(\d\d)(?:-(\d\d)[:.]?(\d\d))?\s*// or return [400, "Paragraph $i of entries: invalid time, please start with hhmm or hh:mm: $para0"];
+        my ($h, $m, $h2, $m2) = ($1, $2, $3, $4);
         $para =~ s/(\w+):?\s*// or return [400, "Paragraph $i of entries: event (e.g. drink, urinate) expected: $para"];
         my $event = $1;
         $event =~ /\A(drink|eat|poop|urinate|comment)\z/ or return [400, "Paragraph $i of entries: unknown event '$event', please choose eat|drink|poop|urinate|comment"];
 
-        my $vol;
+        my $entry = {
+            # XXX check that time is monotonically increasing
+            time => sprintf("%02d.%02d", $h, $m),
+            _h    => $h,
+            _m    => $m,
+            _time => $h*60 + $m,
+        };
+
         if ($event eq 'drink' || $event eq 'urinate') {
-            my $entry = {
-                time => $h*60 + $m,
-            };
-
             $para =~ /\b(\d+)ml\b/ or return [400, "Paragraph $i of entries ($event): volume not found, please use 123ml as format"];
-            $vol = $1;
+            $entry->{vol} = $1;
+        }
 
-            my %kv;
-            while ($para =~ /(\w+)=(.+?)(?=\s+\w+=|\s*\z)/g) {
-                $kv{$1} = $2;
-            }
+        my %kv;
+        while ($para =~ /(\w+)=(.+?)(?=[,.]?\s+\w+=|[.]?\s*\z)/g) {
+            $kv{$1} = $2;
+        }
+        #use DD; dd \%kv;
 
-            for my $k (qw/comment urgency color/) {
-                if (defined $kv{$k}) {
+        for my $k (qw/type comment urgency color/) {
+            if (defined $kv{$k}) {
                 $entry->{$k} = $kv{$k};
             }
+        }
 
-            if ($event eq 'drink') {
-                push @fluid_intakes, $entry;
-            } else {
-                push @urinations, $entry;
-            }
+        if ($event eq 'drink') {
+            $entry->{type} //= "water";
+            push @intakes, $entry;
+        } elsif ($event eq 'eat') {
+            $entry->{type} = "food";
+            push @intakes, $entry;
+        } elsif ($event eq 'urinate') {
+            $entry->{"ucomment"} = "poop" . ($entry->{comment} ? ": $entry->{comment}" : "");
+            push @urinations, $entry;
         }
     }
-    [200, "OK", {fluid_intakes=>\@fluid_intakes, urinations=>\@urinations}];
+
+    my @rows;
+    my $h = do {
+        my $hi = @intakes    ? $intakes[0]{_h}    : undef;
+        my $hu = @urinations ? $urinations[0]{_h} : undef;
+        my $h = $hi // $hu;
+        $h = $hi if defined $hi && $hi < $h;
+        $h = $hu if defined $hu && $hu < $h;
+        $h;
+    };
+    my $ivol_cum = 0;
+    my $uvol_cum = 0;
+    my $prev_utime;
+    my $num_drink = 0;
+    my $num_urinate = 0;
+    while (1) {
+        last unless @intakes || @urinations;
+
+        my @hour_rows;
+        push @hour_rows, {time => sprintf("%02d-%02d.00", $h, $h+1 <= 23 ? $h+1 : 0)};
+
+        my $j = 0;
+        while (@intakes && $intakes[0]{_h} == $h) {
+            my $entry = shift @intakes;
+            $hour_rows[$j]{"intake type"} = $entry->{type};
+            $hour_rows[$j]{itime}         = $entry->{time};
+            $hour_rows[$j]{"icomment"}    = $entry->{comment};
+            if (defined $entry->{vol}) {
+                $num_drink++;
+                $hour_rows[$j]{"ivol (ml)"}   = $entry->{vol};
+                $ivol_cum += $entry->{vol};
+                $hour_rows[$j]{"ivol cum"}    = $ivol_cum;
+            }
+            $j++;
+        }
+
+        $j = 0;
+        while (@urinations && $urinations[0]{_h} == $h) {
+            my $entry = shift @urinations;
+            $hour_rows[$j]{"urin/defec time"}  = $entry->{time};
+            $hour_rows[$j]{"color"}            = $entry->{color};
+            $hour_rows[$j]{"ucomment"}         = $entry->{comment};
+            $hour_rows[$j]{"urgency (0-10)"}   = $entry->{urgency};
+            if (defined $entry->{vol}) {
+                $num_urinate++;
+                $hour_rows[$j]{"uvol (ml)"}    = $entry->{vol};
+                $uvol_cum += $entry->{vol};
+                $hour_rows[$j]{"uvol cum"}     = $uvol_cum;
+                my $mins_diff;
+                if (defined $prev_utime) {
+                    $mins_diff = $prev_utime > $entry->{_time} ? (24*60+$entry->{_time} - $prev_utime) : ($entry->{_time} - $prev_utime);
+                }
+                $hour_rows[$j]{"utimediff"}    = $mins_diff;
+                $hour_rows[$j]{"urate (ml/h)"} = defined($prev_utime) ?
+                    sprintf("%.0f", $entry->{vol} / $mins_diff * 60) : undef;
+            }
+            $j++;
+
+            $prev_utime = $entry->{_time};
+        }
+
+        push @rows, @hour_rows;
+
+        $h++;
+        $h = 0 if $h >= 24;
+    }
+
+    push @rows, {};
+
+    push @rows, {
+        time => 'freq drink/urin',
+        'itime' => $num_drink,
+        'urin/defec time' => $num_urinate,
+    };
+    push @rows, {
+        time => 'avg (ml)',
+        'ivol (ml)' => sprintf("%.0f", $num_drink   ? $ivol_cum / $num_drink   : 0),
+        'uvol (ml)' => sprintf("%.0f", $num_urinate ? $uvol_cum / $num_urinate : 0),
+    };
+
+    [200, "OK", \@rows, {
+        'table.fields' => [
+            'time',
+            'intake type',
+            'itime',
+            'ivol (ml)',
+            'ivol cum',
+            'icomment',
+            'urin/defec time',
+            'uvol (ml)',
+            'uvol cum',
+            'urate (ml/h)',
+            'color',
+            'urgency (0-10)',
+            'ucomment',
+        ],
+        'table.field_aligns' => [
+            'left', #'time',
+            'left', #'intake type',
+            'left', #'itime',
+            'right', #'ivol (ml)',
+            'right', #'ivol cum',
+            'left', #'icomment',
+            'left', #'urin/defec time',
+            'right', #'uvol (ml)',
+            'right', #'uvol cum',
+            'right', #'urate (ml/h)',
+            'left', #'color',
+            'left', #'urgency (0-10)',
+            'left', #'ucomment',
+        ],
+    }];
 }
 
 1;
@@ -96,18 +216,18 @@ Your bladder entries e.g. in `bd-entry1.txt` (I usually write in Org document):
 From the command-line (I usually run the script from inside Emacs):
 
  % gen-bladder-diary-table-from-entries < bd-entry1.txt
- | time    | intake type | itime | ivol (ml) | ivol cum | icomment | urination time | uvol (ml) | uvol cum | urgency (0-3) | ucolor (0-3) | ucomment |
- |---------+-------------+-------+-----------+----------+----------+----------------+-----------+----------+---------------+--------------+----------+
- | 07-08am | water       | 07.30 |       300 |      300 |          |          07.18 |       250 |      250 |               |              |          |
- |         |             |        |           |          |          |          07.58 |       100 |      350 |               |              |          |
- | 08-09am |             |       |           |          |          |                |           |          |               |              |          |
- | 09-10am | water       | 09.15 |       300 |      600 |          |                |           |          |               |              |          |
- | 10-11am |             |       |           |          |          |                |           |          |               |              |          |
- | 12-01pm | water       | 12.30 |       600 |     1200 | thirsty  |          12.45 |       200 |          |               |              |          |
- |         |             |       |           |          |          |                |           |          |               |              |          |
- | total   |             |       |      1200 |          |          |                |       550 |          |               |              |          |
- | freq    |             |       |         3 |          |          |                |         3 |          |               |              |          |
- | avg     |             |       |       400 |          |          |                |       183 |          |               |              |          |
+ | time     | intake type | itime | ivol (ml) | ivol cum | icomment | urination time | uvol (ml) | uvol cum | urgency (0-3) | ucolor (0-3) | ucomment |
+ |----------+-------------+-------+-----------+----------+----------+----------------+-----------+----------+---------------+--------------+----------+
+ | 07-08.00 | water       | 07.30 |       300 |      300 |          |          07.18 |       250 |      250 |               |              |          |
+ |          |             |        |           |          |          |          07.58 |       100 |      350 |               |              |          |
+ | 08-09.00 |             |       |           |          |          |                |           |          |               |              |          |
+ | 09-10.00 | water       | 09.15 |       300 |      600 |          |                |           |          |               |              |          |
+ | 10-11.00 |             |       |           |          |          |                |           |          |               |              |          |
+ | 12-13.00 | water       | 12.30 |       600 |     1200 | thirsty  |          12.45 |       200 |          |               |              |          |
+ |          |             |       |           |          |          |                |           |          |               |              |          |
+ | total    |             |       |      1200 |          |          |                |       550 |          |               |              |          |
+ | freq     |             |       |         3 |          |          |                |         3 |          |               |              |          |
+ | avg      |             |       |       400 |          |          |                |       183 |          |               |              |          |
 
 Produce CSV instead:
 
@@ -116,6 +236,13 @@ Produce CSV instead:
 
 =head1 DESCRIPTION
 
-This script is
+This module can be used to visualize bladder diary entries (which is more
+comfortable to type in) into table form (which is more comfortable to look at).
+
+
+=head1 KEYWORDS
+
+voiding diary, bladder diary
+
 
 =head1 SEE ALSO
