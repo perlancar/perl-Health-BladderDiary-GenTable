@@ -95,13 +95,13 @@ sub gen_bladder_diary_table_from_entries {
             $uentry =~ /\b(\d+)ml\b/     and $parsed_entry->{vol}     //= $1;
             $uentry =~ /\bu([0-9]|10)\b/ and $parsed_entry->{urgency} //= $1;
             $uentry =~ /\bc([0-6])\b/    and $parsed_entry->{color}   //= do {
-                if    ($1 == 0) { 'clear' }
-                elsif ($1 == 1) { 'clear yellow' }
-                elsif ($1 == 2) { 'light yellow' }
-                elsif ($1 == 3) { 'yellow' }
-                elsif ($1 == 4) { 'dark yellow' }
-                elsif ($1 == 5) { 'orange' }
-                elsif ($1 == 6) { 'dark orange' }
+                if    ($1 == 0) { 'clear' } # very good
+                elsif ($1 == 1) { 'light yellow' } # good
+                elsif ($1 == 2) { 'yellow' } # fair
+                elsif ($1 == 3) { 'dark yellow' } # light dehydrated
+                elsif ($1 == 4) { 'amber' } # dehydrated
+                elsif ($1 == 5) { 'brown' } # very dehydrated
+                elsif ($1 == 6) { 'red' } # severe dehydrated
             };
 
             if ($event eq 'drink') {
@@ -315,7 +315,7 @@ Some other information are scraped for writing convenience:
 
  /\b(\d+)ml\b/          for volume
  /\bu([0-9]|10)\b/      for urgency (1-10)
- /\bc([0-6])\b/         for clear to dark orange color (0=clear, 1=clear yellow, 2=light yellow, 3=yellow, 4=dark yellow, 5=orange, 6=dark orange)
+ /\bc([0-6])\b/         for clear to dark orange color (0=clear, 1=light yellow, 2=yellow, 3=dark yellow, 4=amber, 5=brown, 6=red)
 
 Example C<drink> entry (all are equivalent):
 
@@ -327,7 +327,30 @@ Example C<urinate> entry (all are equivalent):
 
  07:45 urinate: vol=200ml urgency=4 color=light yellow comment=at home
  0745 urin 200ml urgency=4 color=light yellow comment=at home
- 0745 u 200ml u4 c2 comment=at home
+ 0745 u 200ml u4 c1 comment=at home
+
+=head3 Urination entries
+
+A urination entry is an entry with event C<urination> (can be written as just
+C<u> or C<urin>). At least volume is required, can be written in ml unit e.g.
+C<300ml> or using C<vol> key, e.g. C<vol=300>.
+
+You can also enter color, using C<color=NAME> or C<c0>..C<c6> for short. These
+colors from 7-color-in-test-tube urine color chart is recommended:
+L<https://www.dreamstime.com/urine-color-chart-test-tubes-medical-vector-illustration-image163017644>
+or
+L<https://stock.adobe.com/images/urine-color-chart-urine-in-test-tubes-medical-vector/299230365>:
+
+ 0 - clear
+ 1 - light yellow
+ 2 - yellow
+ 3 - dark yellow
+ 4 - amber
+ 5 - brown
+ 6 - red
+
+You can also enter urgency information using C<urgency=NUMBER> or C<u0>..C<u10>,
+which is a number from 0 (not urgent at all) to 10 (most urgent).
 
 
 =head1 KEYWORDS
