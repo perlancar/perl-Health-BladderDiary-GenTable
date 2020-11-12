@@ -333,7 +333,9 @@ Example C<urinate> entry (all are equivalent):
 
 A urination entry is an entry with event C<urination> (can be written as just
 C<u> or C<urin>). At least volume is required, can be written in ml unit e.g.
-C<300ml> or using C<vol> key, e.g. C<vol=300>.
+C<300ml> or using C<vol> key, e.g. C<vol=300>. Example:
+
+ 1230 u 200ml
 
 You can also enter color, using C<color=NAME> or C<c0>..C<c6> for short. These
 colors from 7-color-in-test-tube urine color chart is recommended:
@@ -349,8 +351,31 @@ L<https://stock.adobe.com/images/urine-color-chart-urine-in-test-tubes-medical-v
  5 - brown
  6 - red
 
+Example:
+
+ 1230 u 200ml c2
+
 You can also enter urgency information using C<urgency=NUMBER> or C<u0>..C<u10>,
 which is a number from 0 (not urgent at all) to 10 (most urgent).
+
+Example:
+
+ 1230 u 200ml c2 u4
+
+=head2 Drink entries
+
+A drink (fluid intake) entry is an entry with event C<drink> (can be written as
+just C<d>). At least volume is required, can be written in ml unit e.g. C<300ml>
+or using C<vol> key, e.g. C<vol=300>.
+
+Example:
+
+ 1300 d 300ml
+
+You can also input the kind of drink using C<type=NAME>. If type is not
+specified, C<water> is assumed. Example:
+
+ 1300 d 300ml type=coffee
 
 
 =head1 KEYWORDS
