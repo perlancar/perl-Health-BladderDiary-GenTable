@@ -147,7 +147,7 @@ sub gen_bladder_diary_table_from_entries {
             last unless @intakes || @urinations;
 
             my @hour_rows;
-            push @hour_rows, {time => sprintf("%02d-%02d.00", $h, $h+1 <= 23 ? $h+1 : 0)};
+            push @hour_rows, {time => sprintf("%02d.00-%02d.00", $h, $h+1 <= 23 ? $h+1 : 0)};
 
             my $j = 0;
             while (@intakes && $intakes[0]{_h} == $h) {
