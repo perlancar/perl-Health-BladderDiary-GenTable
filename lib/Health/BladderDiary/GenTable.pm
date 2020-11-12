@@ -93,6 +93,7 @@ sub gen_bladder_diary_table_from_entries {
             }
 
             $uentry =~ /\b(\d+)ml\b/     and $parsed_entry->{vol}     //= $1;
+            $uentry =~ /\bv(\d+)\b/      and $parsed_entry->{vol}     //= $1;
             $uentry =~ /\bu([0-9]|10)\b/ and $parsed_entry->{urgency} //= $1;
             $uentry =~ /\bc([0-6])\b/    and $parsed_entry->{color}   //= do {
                 if    ($1 == 0) { 'clear' } # very good
